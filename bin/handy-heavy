@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Heavy post-process. Triggered by Hammerspoon left-Ctrl chord.
+# Input: pbpaste. Output: pbcopy = heavy-edited text.
+#
+# Modes (selected via argv[1]):
+#   (none)  default: double-Ctrl. Chain: Gemini flash-latest → Claude
+#           Sonnet → Haiku → raw. ~5-7s wall.
+#   --pro   triple-Ctrl. Chain: Claude Sonnet → Haiku → raw. ~16-25s wall.
+#           Stricter, more polished editing for posts you'll publish.
+
+set -uo pipefail
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_common.sh
+source "$DIR/_common.sh"
+
+mode_label="heavy"
+notify_title="Handy Heavy"
+if [ "${1:-}" = "--pro" ]; then
+    mode_label="heavy-pro"
+    notify_title="Handy Heavy Pro"
+fi
+
+input="$(pbpaste 2>/dev/null || true)"
+
+if [ -z "$input" ]; then
+    notify "$notify_title" "Clipboard is empty"
+    exit 0
+fi
+
+notify "$notify_title" "Processing…"
+
+# Use the user's local prompt overlay if present.
+prompt_path="$PROMPTS_DIR/heavy.txt"
+if [ -f "$PROMPTS_DIR/heavy.local.txt" ]; then
+    prompt_path="$PROMPTS_DIR/heavy.local.txt"
+fi
+
+if [ "$mode_label" = "heavy-pro" ]; then
+    # Pro: straight to Sonnet (publication-grade). No Gemini.
+    result_cmd_status=0
+    result="$(run_claude_or_fallback "$prompt_path" "$input" "$mode_label" "sonnet" "haiku")" \
+        || result_cmd_status=$?
+else
+    # Default: Gemini → Ollama (opt-in) → Claude fallback.
+    result_cmd_status=0
+    result="$(run_heavy_chain "$prompt_path" "$input" "$mode_label")" \
+        || result_cmd_status=$?
+fi
+
+if [ "$result_cmd_status" -eq 0 ]; then
+    printf '%s' "$result" | pbcopy
+    notify "$notify_title" "Done — press ⌘V to paste"
+else
+    notify "$notify_title" "All providers failed — clipboard unchanged"
+fi

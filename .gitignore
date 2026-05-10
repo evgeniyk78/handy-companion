@@ -1,0 +1,18 @@
+logs/
+handy-settings/backups/
+
+# User-local prompt overlays (kept out of the public repo so each user
+# can tune the dictionary to their own technical stack without leaking
+# personal context).
+prompts/*.local.txt
+
+# Internal planning notes — moved to a separate private repo for the
+# project's history. Not relevant to end users.
+docs/superpowers/
+
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+node_modules/

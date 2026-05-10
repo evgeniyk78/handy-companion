@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Medium post-process. Called by Handy when paste_method=external_script.
+# Input contract (Handy src-tauri/src/clipboard.rs::paste_via_external_script):
+#   - argv[1] = transcribed text (with trailing space if append_trailing_space=true)
+#   - stdout/stderr ignored unless exit != 0
+#   - script is responsible for actually inserting text into the active app
+#
+# Flow: capture current clipboard → cleanup via LLM → write cleaned text →
+# verify pbcopy succeeded → emulate Cmd+V → restore clipboard.
+
+set -uo pipefail
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_common.sh
+source "$DIR/_common.sh"
+
+input="${1:-}"
+
+if [ -z "$input" ]; then
+    exit 0
+fi
+
+# Capture clipboard BEFORE the LLM call. Cleanup can take 1-8s; if we read
+# the clipboard after the call, anything the user copied during that wait
+# would silently overwrite their original pre-Handy clipboard on restore.
+# Note: pbpaste returns plain text only — image/file/RTF clipboards are
+# preserved as best-effort plain text representations on restore.
+prev_clip="$(pbpaste 2>/dev/null || true)"
+
+# Use the user's local overlay if present, otherwise the default English prompt.
+# (See README: copy prompts/medium.txt → prompts/medium.local.txt and edit to
+# add your own technical-stack dictionary.)
+prompt_path="$PROMPTS_DIR/medium.txt"
+if [ -f "$PROMPTS_DIR/medium.local.txt" ]; then
+    prompt_path="$PROMPTS_DIR/medium.local.txt"
+fi
+
+# Cleanup chain (free-first, see _common.sh::run_medium_cleanup_chain):
+# gemini-2.5-flash-lite → gemini-2.5-flash → Ollama (opt-in) → claude CLI → raw.
+output="$(run_medium_cleanup_chain "$prompt_path" "$input" "medium" || true)"
+
+# Defensive: never paste empty text.
+if [ -z "$output" ]; then
+    output="$input"
+fi
+
+printf '%s' "$output" | pbcopy
+
+# Verify the pasteboard actually contains what we asked for. If pbcopy
+# silently failed (rare — pasteboard held by another process), Cmd+V would
+# paste prev_clip into the active app, which is exactly the kind of
+# clipboard-corruption bug users hate. Skip the keystroke + restore prev_clip.
+verify="$(pbpaste 2>/dev/null || true)"
+if [ "$verify" != "$output" ]; then
+    printf '%s' "$prev_clip" | pbcopy
+    exit 1
+fi
+
+# Cmd+V into the active application. Inherits Accessibility permission
+# from Handy.app, which is the launching process.
+osascript -e 'tell application "System Events" to keystroke "v" using {command down}' \
+    >/dev/null 2>&1 || true
+
+# Give the OS time to consume the paste, then restore clipboard.
+sleep 0.15
+printf '%s' "$prev_clip" | pbcopy
+
+exit 0

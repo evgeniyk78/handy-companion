@@ -1,0 +1,15 @@
+{
+  "settings": {
+    "post_process_enabled": true,
+    "external_script_path": "__HANDY_CLEAN_PATH__",
+    "paste_method": "external_script",
+    "bindings": {
+      "transcribe": {
+        "current_binding": "option+shift+space"
+      },
+      "transcribe_with_post_process": {
+        "current_binding": "option+space"
+      }
+    }
+  }
+}
