@@ -27,6 +27,18 @@ Technical terms and proper nouns:
   the speaker would plausibly use, prefer the canonical form over the
   literal transcription.
 
+Numbers and versions:
+- Render spoken version numbers and decimals as digits, not words, when
+  the context clearly indicates a numeric value or identifier.
+  Examples (any language):
+    "three point one" / "три точка один" / "три один"  → 3.1
+    "two point five" / "две точка пять"                → 2.5
+    "version three"  / "версия три"                    → v3
+    "two thousand twenty four" (year context)          → 2024
+- Do NOT convert generic counted nouns: "three cats" stays "three cats",
+  "пять минут" stays "пять минут". Apply only when the speaker clearly
+  meant a numeric value, version identifier, year, or similar.
+
 What NOT to do:
 - Do not rephrase or reorder sentences.
 - Do not change the meaning, tone, or register.

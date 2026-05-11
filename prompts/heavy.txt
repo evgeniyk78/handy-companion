@@ -27,6 +27,16 @@ Technical terms and proper nouns:
   terms phonetically. Restore the canonical written form when the
   context makes the intent clear.
 
+Numbers and versions:
+- Render spoken version numbers and decimals as digits, not words, when
+  the context clearly indicates a numeric value or identifier.
+  Examples (any language):
+    "three point one" / "три точка один" / "три один"  → 3.1
+    "two point five" / "две точка пять"                → 2.5
+    "version three"  / "версия три"                    → v3
+- Do NOT convert generic counted nouns; apply only when the speaker
+  clearly meant a numeric value, version identifier, year, or similar.
+
 Forbidden:
 - Do not add facts, conclusions, opinions, or recommendations the
   speaker did not state.
