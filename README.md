@@ -137,6 +137,68 @@ agree to their terms.
 - **Ollama** — runs locally. Models have their own licenses (Llama, Qwen,
   etc.) — check your model's terms.
 
+## Customizing hotkeys
+
+The three hotkeys live in two different places.
+
+### Medium (default `option+space`)
+
+Configured in **Handy**, not in this repo:
+
+1. Open Handy → Settings → Bindings
+2. Find "Transcribe with Post-Processing"
+3. Click the existing binding and press the new combo
+4. Restart Handy
+
+Conflict-free combos on macOS (no clash with Spotlight or other
+system shortcuts): `control+option+space`, `command+option+space`,
+or any function key like `f5` / `f6`. The setting is persisted to
+`~/Library/Application Support/com.pais.handy/settings_store.json`.
+
+To bake your preferred binding into the setup wizard so a re-run of
+`apply.sh` doesn't reset it, edit
+`handy-settings/settings.patch.json` →
+`bindings.transcribe_with_post_process.current_binding` before
+running `bash handy-settings/apply.sh`.
+
+### Heavy / Heavy Pro (default double / triple left-Ctrl)
+
+Configured in `hammerspoon/handy-heavy.lua`. Two knobs at the top:
+
+```lua
+local TAP_INTERVAL = 0.25         -- seconds between taps to count as a sequence
+local LEFT_CTRL_KEYCODE = 59      -- macOS keycode for left Control
+```
+
+Useful macOS modifier keycodes:
+
+| Key | Code |
+|-----|------|
+| Left Control | 59 |
+| Right Control | 62 |
+| Left Option | 58 |
+| Right Option | 61 |
+| Left Shift | 56 |
+| Right Shift | 60 |
+| fn | 63 |
+
+After editing, reload Hammerspoon: right-click the menubar icon →
+**Reload Config**, or run `hs.reload()` in the Hammerspoon Console.
+
+Prefer a regular hotkey over the double / triple tap chord? Keep
+the `HEAVY_SCRIPT` definition at the top of `handy-heavy.lua` and
+replace the `hs.eventtap.new(...)` block with two `hs.hotkey.bind`
+calls — one for Heavy, one for Heavy Pro:
+
+```lua
+hs.hotkey.bind({"ctrl", "alt"}, "H", function()
+    hs.task.new(HEAVY_SCRIPT, nil, {}):start()
+end)
+hs.hotkey.bind({"ctrl", "alt"}, "P", function()
+    hs.task.new(HEAVY_SCRIPT, nil, {"--pro"}):start()
+end)
+```
+
 ## Customizing prompts (your stack, your style)
 
 The default prompts in `prompts/medium.txt` and `prompts/heavy.txt` are
