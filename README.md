@@ -234,7 +234,7 @@ All optional. Set in your shell profile or `~/.handy-companion/config.sh`
 | `HANDY_OLLAMA_HOST` | _empty_ | Set to e.g. `http://localhost:11434` to enable Ollama tier |
 | `HANDY_OLLAMA_MODEL` | _empty_ | e.g. `qwen2.5:3b` |
 | `OLLAMA_TIMEOUT_SEC` | `15` | Ollama call timeout |
-| `GEMINI_TIMEOUT_SEC` | `8` | Gemini API call timeout |
+| `GEMINI_TIMEOUT_SEC` | `15` | Gemini per-call timeout. A minimal prompt finishes in 1-2s; bigger personalized dictionaries (`prompts/*.local.txt` with dozens of terms) can take 8-12s on multilingual input, so 15s gives that headroom. |
 | `CLAUDE_TIMEOUT_SEC` | `30` | Claude CLI call timeout (Heavy/Heavy-Pro) |
 | `GEMINI_KEYCHAIN_SERVICE` | `handy-companion-gemini` | Keychain item name (primary key) |
 | `GEMINI_KEYCHAIN_SERVICE_SECONDARY` | `<primary>-2` | Optional second-account key; auto-tried only on HTTP 429 from primary |

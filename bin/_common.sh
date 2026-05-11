@@ -22,7 +22,13 @@ PROMPTS_DIR="$PROJECT_ROOT/prompts"
 # can't be hijacked by another user creating /tmp/handy-companion-sandbox first.
 SANDBOX_DIR="${TMPDIR:-/tmp}/handy-companion-sandbox-$(id -u)"
 CLAUDE_TIMEOUT_SEC="30"
-GEMINI_TIMEOUT_SEC="8"
+# Gemini per-call timeout. 8s was the original default but a personalized
+# prompts/medium.local.txt with a sizeable tech-term dictionary (a few dozen
+# entries) regularly pushes flash-lite to 8-12s on multilingual input. 15s
+# gives that headroom while still bounding the worst-case Medium-chain wait
+# (≤ flash-lite + flash + ollama + claude). Override via env var if you keep
+# the prompt minimal and want a stricter UX cap.
+GEMINI_TIMEOUT_SEC="${GEMINI_TIMEOUT_SEC:-15}"
 # Default model when caller doesn't specify one. handy-clean and handy-heavy
 # pass their own (haiku for Medium, sonnet for Heavy) plus a backup model.
 CLAUDE_MODEL_DEFAULT="sonnet"
