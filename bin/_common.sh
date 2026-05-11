@@ -102,8 +102,8 @@ data = {
     "attempt": os.environ["ATTEMPT"],
     "input_len": len(os.environ["INPUT"]),
     "output_len": len(os.environ["OUTPUT"]),
-    "input_first_200": os.environ["INPUT"][:200],
-    "output_first_200": os.environ["OUTPUT"][:200],
+    "input_excerpt": os.environ["INPUT"][:1000],
+    "output_excerpt": os.environ["OUTPUT"][:1000],
     "latency_ms": int(os.environ["LATENCY_MS"]),
     "exit_code": int(os.environ["EXIT_CODE"]),
 }

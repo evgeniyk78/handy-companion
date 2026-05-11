@@ -242,8 +242,10 @@ All optional. Set in your shell profile or `~/.handy-companion/config.sh`
 ## Logs and debugging
 
 - `logs/medium-*.log` and `logs/heavy-*.log` — JSON record per attempt
-  (model, latency, attempt=primary/backup1/backup2, exit code, first
-  200 chars of input/output). Last 50 kept.
+  (model, latency, attempt=primary/backup1/backup2, exit code, plus
+  `input_excerpt` and `output_excerpt` — the first 1000 chars of the
+  raw STT input and the cleaned output, useful for comparing what
+  Whisper produced vs what Gemini changed). Last 50 kept.
 - `logs/gemini-debug.log` — append-only diagnostic for every Gemini call:
   HTTP status, error.message, finishReason, body excerpt on failure.
 - `logs/ollama-debug.log` — same for Ollama.
