@@ -26,10 +26,18 @@ GEMINI_TIMEOUT_SEC="8"
 # Default model when caller doesn't specify one. handy-clean and handy-heavy
 # pass their own (haiku for Medium, sonnet for Heavy) plus a backup model.
 CLAUDE_MODEL_DEFAULT="sonnet"
-# Gemini API key lives in macOS Keychain under this service name.
-# Stored once via: security add-generic-password -U -A -a "$USER" -s handy-companion-gemini -w '<KEY>'
-# (Legacy service name "handy-claude-gemini" is also accepted as fallback.)
+# Gemini API keys live in macOS Keychain under these service names.
+# Stored via: security add-generic-password -U -A -a "$USER" -s <service> -w '<KEY>'
+#
+# Multi-key fallback: at runtime _invoke_gemini_api tries them in this order
+# and rotates to the next key ONLY on HTTP 429 (quota exceeded). All other
+# errors fail immediately without burning the remaining keys.
+#
+#   primary   — handy-companion-gemini      (current account)
+#   secondary — handy-companion-gemini-2    (optional second account; empty = single-key mode)
+#   legacy    — handy-claude-gemini         (backwards compat with old installs)
 GEMINI_KEYCHAIN_SERVICE="${GEMINI_KEYCHAIN_SERVICE:-handy-companion-gemini}"
+GEMINI_KEYCHAIN_SERVICE_SECONDARY="${GEMINI_KEYCHAIN_SERVICE_SECONDARY:-${GEMINI_KEYCHAIN_SERVICE}-2}"
 GEMINI_KEYCHAIN_SERVICE_LEGACY="handy-claude-gemini"
 
 # Optional Ollama provider (purely opt-in: empty = tier silently skipped).
@@ -123,13 +131,24 @@ _invoke_gemini_api() {
     local ts
     ts="$(date -u +%FT%TZ)"
 
-    local api_key
-    api_key="$(security find-generic-password -a "$USER" -s "$GEMINI_KEYCHAIN_SERVICE" -w 2>/dev/null || true)"
-    if [ -z "$api_key" ]; then
-        api_key="$(security find-generic-password -a "$USER" -s "$GEMINI_KEYCHAIN_SERVICE_LEGACY" -w 2>/dev/null || true)"
-    fi
-    if [ -z "$api_key" ]; then
-        echo "$ts [FAIL] $model: no API key in Keychain ($GEMINI_KEYCHAIN_SERVICE or legacy $GEMINI_KEYCHAIN_SERVICE_LEGACY)" >> "$debug_log"
+    # Collect API keys in priority order. Empty slots are skipped silently —
+    # single-key setups keep working, multi-account setups gain rotation on 429.
+    local api_keys=() api_labels=()
+    local _k
+    for _slot_pair in \
+        "primary:$GEMINI_KEYCHAIN_SERVICE" \
+        "secondary:$GEMINI_KEYCHAIN_SERVICE_SECONDARY" \
+        "legacy:$GEMINI_KEYCHAIN_SERVICE_LEGACY"
+    do
+        _k="$(security find-generic-password -a "$USER" -s "${_slot_pair#*:}" -w 2>/dev/null || true)"
+        if [ -n "$_k" ]; then
+            api_keys+=("$_k")
+            api_labels+=("${_slot_pair%%:*}")
+        fi
+    done
+    _k=""
+    if [ "${#api_keys[@]}" -eq 0 ]; then
+        echo "$ts [FAIL] $model: no API key in any Keychain slot ($GEMINI_KEYCHAIN_SERVICE, $GEMINI_KEYCHAIN_SERVICE_SECONDARY, $GEMINI_KEYCHAIN_SERVICE_LEGACY)" >> "$debug_log"
         return 1
     fi
 
@@ -139,53 +158,79 @@ _invoke_gemini_api() {
         return 1
     }
 
+    # Disable Gemini "thinking" for the 2.5 family. By default 2.5-flash burns
+    # 70-80% of its time (and its output-token budget) on hidden reasoning that
+    # adds nothing for transcript cleanup, and on long inputs the result was
+    # truncated mid-sentence. 2.5-flash-lite already doesn't think — the field
+    # is a no-op there. 3.x models reject `thinkingBudget: 0`, so the snippet
+    # is added only for 2.5-* models.
     local body
-    body="$(jq -n --arg sys "$sys_prompt" --arg user "$input" '{
+    body="$(jq -n --arg sys "$sys_prompt" --arg user "$input" --arg model "$model" '{
         systemInstruction: {parts: [{text: $sys}]},
         contents: [{parts: [{text: $user}]}],
-        generationConfig: {temperature: 0.2, maxOutputTokens: 2048}
+        generationConfig: (
+            {temperature: 0.2, maxOutputTokens: 2048}
+            + (if ($model | startswith("gemini-2.5-"))
+               then {thinkingConfig: {thinkingBudget: 0}}
+               else {} end)
+        )
     }')" || {
         echo "$ts [FAIL] $model: jq could not build request body" >> "$debug_log"
         return 1
     }
 
-    local raw http_status response curl_exit=0
-    raw="$(curl -sS --max-time "$GEMINI_TIMEOUT_SEC" \
-        -w '\n__HTTP_STATUS__:%{http_code}' \
-        "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent" \
-        -H 'Content-Type: application/json' \
-        -H "X-goog-api-key: $api_key" \
-        -X POST -d "$body" 2>>"$debug_log")" || curl_exit=$?
+    # Try each key in priority order. Rotate ONLY on HTTP 429 (quota); any
+    # other failure (network, 4xx other than 429, 5xx, empty text) returns
+    # immediately so we don't burn the remaining keys on non-quota issues.
+    local i api_key label raw http_status response curl_exit text err_msg finish_reason
+    for i in "${!api_keys[@]}"; do
+        api_key="${api_keys[$i]}"
+        label="${api_labels[$i]}"
+        curl_exit=0
 
-    if [ "$curl_exit" -ne 0 ]; then
-        echo "$ts [FAIL] $model: curl exit $curl_exit (timeout/network/dns)" >> "$debug_log"
-        return 1
-    fi
+        raw="$(curl -sS --max-time "$GEMINI_TIMEOUT_SEC" \
+            -w '\n__HTTP_STATUS__:%{http_code}' \
+            "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent" \
+            -H 'Content-Type: application/json' \
+            -H "X-goog-api-key: $api_key" \
+            -X POST -d "$body" 2>>"$debug_log")" || curl_exit=$?
 
-    http_status="$(printf '%s' "$raw" | tail -n1 | sed 's/.*__HTTP_STATUS__://')"
-    response="$(printf '%s' "$raw" | sed '$d')"
+        if [ "$curl_exit" -ne 0 ]; then
+            echo "$ts [FAIL] $model [$label]: curl exit $curl_exit (timeout/network/dns)" >> "$debug_log"
+            return 1
+        fi
 
-    if [ "$http_status" != "200" ]; then
-        local err_msg
-        err_msg="$(printf '%s' "$response" | jq -r '.error.message // empty' 2>/dev/null)"
-        echo "$ts [FAIL] $model: HTTP $http_status: ${err_msg:-no-detail}" >> "$debug_log"
-        echo "$ts [FAIL]   body_first_400: $(printf '%s' "$response" | python3 -c 'import sys; print(sys.stdin.read()[:400], end="")')" >> "$debug_log"
-        return 1
-    fi
+        http_status="$(printf '%s' "$raw" | tail -n1 | sed 's/.*__HTTP_STATUS__://')"
+        response="$(printf '%s' "$raw" | sed '$d')"
 
-    local text
-    text="$(printf '%s' "$response" | jq -r '.candidates[0].content.parts[0].text // empty' 2>/dev/null)"
-    if [ -z "$text" ]; then
-        local finish_reason
-        finish_reason="$(printf '%s' "$response" | jq -r '.candidates[0].finishReason // empty' 2>/dev/null)"
-        echo "$ts [FAIL] $model: empty text (finishReason=${finish_reason:-none})" >> "$debug_log"
-        echo "$ts [FAIL]   body_first_400: $(printf '%s' "$response" | python3 -c 'import sys; print(sys.stdin.read()[:400], end="")')" >> "$debug_log"
-        return 1
-    fi
+        if [ "$http_status" = "429" ]; then
+            err_msg="$(printf '%s' "$response" | jq -r '.error.message // empty' 2>/dev/null)"
+            echo "$ts [QUOTA] $model [$label]: HTTP 429 — rotating to next key. ${err_msg:-no-detail}" >> "$debug_log"
+            continue
+        fi
 
-    echo "$ts [ OK ] $model: $(printf '%s' "$text" | wc -c | tr -d ' ') bytes" >> "$debug_log"
-    printf '%s' "$text"
-    return 0
+        if [ "$http_status" != "200" ]; then
+            err_msg="$(printf '%s' "$response" | jq -r '.error.message // empty' 2>/dev/null)"
+            echo "$ts [FAIL] $model [$label]: HTTP $http_status: ${err_msg:-no-detail}" >> "$debug_log"
+            echo "$ts [FAIL]   body_first_400: $(printf '%s' "$response" | python3 -c 'import sys; print(sys.stdin.read()[:400], end="")')" >> "$debug_log"
+            return 1
+        fi
+
+        text="$(printf '%s' "$response" | jq -r '.candidates[0].content.parts[0].text // empty' 2>/dev/null)"
+        if [ -z "$text" ]; then
+            finish_reason="$(printf '%s' "$response" | jq -r '.candidates[0].finishReason // empty' 2>/dev/null)"
+            echo "$ts [FAIL] $model [$label]: empty text (finishReason=${finish_reason:-none})" >> "$debug_log"
+            echo "$ts [FAIL]   body_first_400: $(printf '%s' "$response" | python3 -c 'import sys; print(sys.stdin.read()[:400], end="")')" >> "$debug_log"
+            return 1
+        fi
+
+        echo "$ts [ OK ] $model [$label]: $(printf '%s' "$text" | wc -c | tr -d ' ') bytes" >> "$debug_log"
+        printf '%s' "$text"
+        return 0
+    done
+
+    echo "$ts [FAIL] $model: all ${#api_keys[@]} key(s) returned HTTP 429 (quota exhausted)" >> "$debug_log"
+    return 1
 }
 
 # Internal: invoke an Ollama-compatible local server (default port 11434).

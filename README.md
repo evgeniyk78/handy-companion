@@ -71,6 +71,20 @@ output paste into your active app.
 
 For Heavy mode, follow the Hammerspoon snippet `setup.sh` printed.
 
+### Optional: a second Gemini key for quota fallback
+
+Free-tier Gemini quotas are tight (a few requests per minute on
+`2.5-flash`). If you hit them often, add a key from a second Google
+account in a separate Keychain slot:
+
+```bash
+security add-generic-password -A -a "$USER" -s handy-companion-gemini-2 -w 'YOUR_SECOND_KEY'
+```
+
+`_invoke_gemini_api` will automatically rotate to it on HTTP 429 from the
+primary key. Any other error (network, bad key, 5xx, empty response)
+still fails fast without burning the second key.
+
 ## Provider chain
 
 handy-companion tries providers in order. The first one that returns a
@@ -81,7 +95,7 @@ non-empty response wins; the rest are skipped.
 | Tier | Provider | Model | Latency | Cost | Required |
 |------|----------|-------|---------|------|----------|
 | 1 | Gemini API | gemini-2.5-flash-lite | ~0.8-1.5s | Free tier | API key |
-| 2 | Gemini API | gemini-2.5-flash | ~2-3s | Free tier | API key |
+| 2 | Gemini API | gemini-2.5-flash | ~1-2s | Free tier | API key |
 | 3 | Ollama (opt-in) | your choice | ~1-3s | Free, offline | `HANDY_OLLAMA_HOST` set |
 | 4 | Claude CLI | haiku → sonnet | ~3-7s | Claude Max sub or API key | `claude` in PATH |
 | 5 | raw input | — | — | — | (always pastes original) |
@@ -90,10 +104,15 @@ non-empty response wins; the rest are skipped.
 
 | Tier | Provider | Model | Latency |
 |------|----------|-------|---------|
-| 1 | Gemini API | gemini-2.5-flash | ~3-7s |
+| 1 | Gemini API | gemini-2.5-flash | ~1-2s |
 | 2 | Ollama (opt-in) | your choice | ~3-10s |
 | 3 | Claude CLI | sonnet → haiku | ~15-25s |
 | 4 | raw input | — | — |
+
+> Gemini latency assumes the 2.5-family `thinkingBudget: 0` patch shipped
+> with this release — without it, 2.5-flash spends 70-80% of wall time on
+> hidden reasoning that doesn't help transcript cleanup, and on long
+> inputs the result was getting truncated mid-sentence.
 
 ### Heavy Pro chain (××× Ctrl)
 
@@ -155,7 +174,8 @@ All optional. Set in your shell profile or `~/.handy-companion/config.sh`
 | `OLLAMA_TIMEOUT_SEC` | `15` | Ollama call timeout |
 | `GEMINI_TIMEOUT_SEC` | `8` | Gemini API call timeout |
 | `CLAUDE_TIMEOUT_SEC` | `30` | Claude CLI call timeout (Heavy/Heavy-Pro) |
-| `GEMINI_KEYCHAIN_SERVICE` | `handy-companion-gemini` | Keychain item name |
+| `GEMINI_KEYCHAIN_SERVICE` | `handy-companion-gemini` | Keychain item name (primary key) |
+| `GEMINI_KEYCHAIN_SERVICE_SECONDARY` | `<primary>-2` | Optional second-account key; auto-tried only on HTTP 429 from primary |
 
 ## Logs and debugging
 

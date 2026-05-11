@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.1.1 — 2026-05-11
+
+### Performance
+
+- **Disabled Gemini "thinking" for the 2.5 family** (`thinkingBudget: 0`
+  in `_invoke_gemini_api`). Heavy mode `gemini-2.5-flash` dropped from
+  ~3-7s to ~1-2s per call (~4× speedup), and the truncation-mid-sentence
+  bug on long inputs is gone — default thinking was eating most of the
+  2048-token output budget on hidden reasoning. The flag is added only
+  for `gemini-2.5-*` (3.x models reject `0`); 2.5-flash-lite already
+  doesn't think, so the field is a harmless no-op there.
+
+### Reliability
+
+- **Multi-key fallback in `_invoke_gemini_api`.** Optional second
+  Keychain slot `handy-companion-gemini-2` is auto-tried on HTTP 429
+  from the primary key. Other failures (network, 4xx other than 429,
+  5xx, empty text) still fail immediately without burning the second
+  key. Single-key setups are unchanged. Override the slot name via
+  `GEMINI_KEYCHAIN_SERVICE_SECONDARY`. Logs now tag attempts with the
+  slot label (`[primary]`, `[secondary]`, `[legacy]`) and a `[QUOTA]`
+  marker on rotation.
+
 ## v0.1.0 — 2026-05-10 (initial public release)
 
 First public release. Pipeline:
