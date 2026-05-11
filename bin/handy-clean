@@ -20,6 +20,23 @@ if [ -z "$input" ]; then
     exit 0
 fi
 
+# Capture the frontmost app NOW, before the LLM call eats 1-8s. By the time
+# we send Cmd+V at the end, focus may have shifted — a notification toast,
+# Slack auto-focusing a new message, a window manager re-arranging things —
+# and the paste would land in the wrong field. We re-activate this app
+# right before the keystroke so the paste lands where the user expected.
+# Empty string = fallback to "just paste to whatever is frontmost".
+target_app="$(osascript -e 'tell application "System Events" to name of first application process whose frontmost is true' 2>/dev/null || true)"
+
+# Don't re-activate Handy itself (the script was spawned by Handy, so on
+# some macOS versions Handy may briefly appear as frontmost). Re-activating
+# Handy would steal focus from the user's target. In that case we fall
+# back to "no re-activation" and just send the keystroke to whatever is
+# frontmost at paste time.
+if [ "$target_app" = "Handy" ]; then
+    target_app=""
+fi
+
 # Capture clipboard BEFORE the LLM call. Cleanup can take 1-8s; if we read
 # the clipboard after the call, anything the user copied during that wait
 # would silently overwrite their original pre-Handy clipboard on restore.
@@ -54,6 +71,16 @@ verify="$(pbpaste 2>/dev/null || true)"
 if [ "$verify" != "$output" ]; then
     printf '%s' "$prev_clip" | pbcopy
     exit 1
+fi
+
+# Re-activate the original target app if we captured it. AppleScript
+# `activate` is a no-op if the app is already frontmost, and brings it
+# back to front otherwise. The small sleep lets the activation settle
+# before we send the keystroke — without it, Cmd+V can race the activate
+# and still hit the wrong window.
+if [ -n "$target_app" ]; then
+    osascript -e "tell application \"$target_app\" to activate" >/dev/null 2>&1 || true
+    sleep 0.08
 fi
 
 # Cmd+V into the active application. Inherits Accessibility permission
