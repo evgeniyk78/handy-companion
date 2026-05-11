@@ -1,5 +1,70 @@
 # Changelog
 
+## v0.1.2 — 2026-05-11
+
+### Reliability
+
+- **handy-clean: re-activate target app before Cmd+V.** The LLM cleanup
+  call takes 1-8s; during that window the system's frontmost window can
+  change (notification toast, Slack auto-focusing a new message, Stage
+  Manager rearranging things) and Cmd+V at the end lands in the wrong
+  field. Fix: capture the frontmost app at script start, then activate
+  it right before the keystroke. Handy itself is filtered out (edge case
+  when Handy briefly grabs focus while spawning the script). Helps in
+  most cases but not all — see the new alternative architecture below
+  for users who want bulletproof paste.
+
+### New: alternative architecture using Handy's built-in post-process
+
+- **`handy-settings/use-builtin-llm.sh`** — one-shot script that switches
+  Handy to its own OpenAI-compatible post-processing pipeline, pointed
+  at Gemini's OpenAI-compat endpoint
+  (`https://generativelanguage.googleapis.com/v1beta/openai/`). Bypasses
+  `bin/handy-clean` entirely; Handy calls the API itself and pastes via
+  its native mechanism — more reliable than osascript Cmd+V, and one
+  fewer process in the chain.
+
+  Trade-offs: no fallback to Ollama/Claude on Gemini failure (Handy
+  drops to raw Whisper output instead), no multi-key Keychain rotation,
+  the API key lives in Handy's settings JSON rather than Keychain. See
+  README "Alternative architecture: Handy's built-in post-process" for
+  the full comparison. Re-run `bash handy-settings/apply.sh` to switch
+  back to the external_script path.
+
+### Logs
+
+- Bumped `logs/medium-*.log` / `logs/heavy-*.log` excerpt fields from
+  200 → 1000 chars, renamed `input_first_200` / `output_first_200` to
+  `input_excerpt` / `output_excerpt`. Side-by-side comparison of raw
+  Whisper input vs cleaned output is one of the most useful debugging
+  signals, and 200 chars regularly cut off mid-sentence on real
+  dictations. Disk impact is negligible (still rotated to 50 files).
+
+### Prompts and timeouts
+
+- `prompts/medium.txt` and `prompts/heavy.txt` got a "Numbers and
+  versions" section so spoken version numbers in any language render as
+  digits (`"three point one"` / `"три точка один"` / `"три один"` →
+  `3.1`). Guarded against converting generic counted nouns —
+  `"three cats"` / `"пять минут"` stay as words. (Whisper Large v3 Turbo
+  does this normalization natively too, so this is now a fallback for
+  non-Turbo STT engines.)
+- `GEMINI_TIMEOUT_SEC` default bumped from 8s to 15s. A minimal prompt
+  finishes in 1-2s; a personalized `prompts/medium.local.txt` with a
+  sizeable technical-term dictionary regularly pushes flash-lite to
+  8-12s on multilingual input, and the previous 8s cap silently dropped
+  legitimate slow-but-working calls into the next tier. Overridable via
+  the same env var.
+
+### Docs
+
+- New README section "Customizing hotkeys" — covers Medium (Handy UI
+  rebind) and Heavy / Heavy Pro (`hammerspoon/handy-heavy.lua` with the
+  `TAP_INTERVAL` and `LEFT_CTRL_KEYCODE` knobs and an `hs.hotkey.bind`
+  alternative for users who prefer a normal chord over double / triple
+  tap). Two FAQs in the same week pointed to this being a missing
+  reference.
+
 ## v0.1.1 — 2026-05-11
 
 ### Performance

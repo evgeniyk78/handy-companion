@@ -85,6 +85,38 @@ security add-generic-password -A -a "$USER" -s handy-companion-gemini-2 -w 'YOUR
 primary key. Any other error (network, bad key, 5xx, empty response)
 still fails fast without burning the second key.
 
+## Alternative architecture: Handy's built-in post-process
+
+Handy v0.8 ships its own OpenAI-compatible post-processing pipeline.
+You can skip the external_script path entirely and let Handy call
+Gemini directly via its OpenAI-compatible endpoint. This is a single
+config-file flip — see `handy-settings/use-builtin-llm.sh`. Run that
+script and Handy will start calling Gemini itself, using its native
+paste mechanism (more reliable than osascript Cmd+V from a shell
+script). To swap back to the external_script path, re-run
+`bash handy-settings/apply.sh`.
+
+|                       | External script (default)                                    | Handy built-in (alternative)                          |
+|-----------------------|--------------------------------------------------------------|-------------------------------------------------------|
+| Paste reliability     | osascript Cmd+V; can drift focus during long LLM calls       | Handy's native paste; rock solid                      |
+| Provider fallback     | Gemini → Ollama → Claude → raw Whisper                       | Single provider → raw Whisper on failure              |
+| Multi-key support     | Yes, primary → secondary → legacy Keychain slots             | No (one key per provider in Handy's settings)         |
+| API key storage       | macOS Keychain (encrypted at rest)                           | JSON file in `~/Library/Application Support/com.pais.handy/` |
+| Custom logs           | `logs/medium-*.log` (per-call JSON with full IN/OUT)         | Handy's own log at `~/Library/Logs/com.pais.handy/`   |
+| Latency               | ~1-2s on flash-lite                                          | ~0.8-1.5s (one less hop)                              |
+| Setup                 | Run `bin/setup.sh`                                           | Run `bash handy-settings/use-builtin-llm.sh`          |
+
+**When to pick which:**
+
+- **External script (default)** if you want fallback to Ollama/Claude when
+  Gemini hits quota, multi-account key rotation, or custom per-call logs.
+  Pay the price of slightly less reliable paste (the `target_app` re-
+  activation in `bin/handy-clean` fixes most cases but not all).
+- **Handy built-in** if you want bulletproof paste and one provider is
+  enough. Whisper Turbo + Handy's user dictionary + Gemini cleanup hits
+  ~95% of the result anyway; the fallback chain matters less than it
+  used to.
+
 ## Provider chain
 
 handy-companion tries providers in order. The first one that returns a
