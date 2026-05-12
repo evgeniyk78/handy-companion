@@ -164,12 +164,16 @@ _invoke_gemini_api() {
         return 1
     }
 
-    # Disable Gemini "thinking" for the 2.5 family. By default 2.5-flash burns
-    # 70-80% of its time (and its output-token budget) on hidden reasoning that
-    # adds nothing for transcript cleanup, and on long inputs the result was
-    # truncated mid-sentence. 2.5-flash-lite already doesn't think — the field
-    # is a no-op there. 3.x models reject `thinkingBudget: 0`, so the snippet
-    # is added only for 2.5-* models.
+    # Suppress Gemini "thinking" — it adds latency and burns output-token
+    # budget on hidden reasoning that doesn't help transcript cleanup.
+    # The control surface differs by model family:
+    #   2.5-flash / 2.5-flash-preview: thinkingBudget: 0 (fully disables)
+    #   2.5-flash-lite              : already doesn't think (no-op, safe)
+    #   3.x family                  : thinkingLevel: "minimal" (the docs
+    #                                 say it's "likely off" — no hard kill
+    #                                 switch on 3.x, but minimal is the
+    #                                 lowest available level)
+    #   anything else               : no config, accept defaults
     local body
     body="$(jq -n --arg sys "$sys_prompt" --arg user "$input" --arg model "$model" '{
         systemInstruction: {parts: [{text: $sys}]},
@@ -178,6 +182,8 @@ _invoke_gemini_api() {
             {temperature: 0.2, maxOutputTokens: 2048}
             + (if ($model | startswith("gemini-2.5-"))
                then {thinkingConfig: {thinkingBudget: 0}}
+               elif ($model | startswith("gemini-3.")) or ($model | startswith("gemini-3-"))
+               then {thinkingConfig: {thinkingLevel: "minimal"}}
                else {} end)
         )
     }')" || {
@@ -424,12 +430,24 @@ run_heavy_chain() {
         return 1
     }
 
-    # Pinned to gemini-2.5-flash (stable, predictable quota).
-    if out="$(_try_gemini_heavy "gemini-2.5-flash" "primary")"; then
+    # Heavy primary: gemini-3.1-flash-lite with thinkingLevel=minimal
+    # (set automatically in _invoke_gemini_api for 3.x models). On our
+    # A/B/C bench it was 1.5× faster than 2.5-flash with thinkingBudget=0
+    # AND produced tighter editorial output (best of three candidates
+    # for publication-grade rewrites). On free tier the 3.x model family
+    # has its own quota bucket — if it 429s we fall through to the 2.5
+    # backup below.
+    if out="$(_try_gemini_heavy "gemini-3.1-flash-lite" "primary")"; then
         printf '%s' "$out"; return 0
     fi
 
-    if out="$(_try_ollama_heavy "$HANDY_OLLAMA_MODEL" "backup1")"; then
+    # Backup: 2.5-flash with thinkingBudget=0 (the previous primary, kept
+    # for reliability on free tier where 3.x quotas might be tighter).
+    if out="$(_try_gemini_heavy "gemini-2.5-flash" "backup1")"; then
+        printf '%s' "$out"; return 0
+    fi
+
+    if out="$(_try_ollama_heavy "$HANDY_OLLAMA_MODEL" "backup2")"; then
         printf '%s' "$out"; return 0
     fi
 

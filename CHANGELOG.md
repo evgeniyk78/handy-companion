@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.1.3 — 2026-05-12
+
+### Performance
+
+- **Heavy chain primary swapped: `gemini-2.5-flash` (budget=0) →
+  `gemini-3.1-flash-lite` (thinkingLevel=minimal).** A/B/C bench on 3
+  Russian dictation samples × 2 runs (paid-tier key, so quota wouldn't
+  skew numbers): 3.1-flash-lite was 1.5-2× faster than the 2.5-flash
+  baseline AND produced tighter editorial output — long input went
+  from 1824 to 1626 chars with cleaner restructure. `gemini-2.5-flash`
+  stays as backup1 (free-tier reliability when 3.x quotas bite).
+
+- **Thinking suppression now covers 3.x models.** Previously
+  `_invoke_gemini_api` only added `thinkingBudget: 0` for `gemini-2.5-*`
+  and sent no thinking config for anything else — fine when 3.x wasn't
+  in the chain, but switching the Heavy primary to `gemini-3.1-flash-lite`
+  made it relevant. New conditional: 2.5-* → `thinkingBudget: 0`, 3.*
+  → `thinkingLevel: "minimal"`, anything else → no config (accept
+  defaults). 3.x has no hard kill switch, but `"minimal"` is the lowest
+  documented level and empirically yields sub-second responses on
+  flash-lite.
+
+- Medium chain primary stays on `gemini-2.5-flash-lite` — its free-tier
+  quota is more generous than 3.1-lite's, and the speed difference is
+  negligible on short input. Paid-tier users running Handy's built-in
+  path (see v0.1.2 alternative architecture) can swap to
+  `gemini-3.1-flash-lite` manually via Handy → Settings →
+  Post-processing → Model.
+
 ## v0.1.2 — 2026-05-11
 
 ### Reliability
