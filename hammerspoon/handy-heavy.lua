@@ -12,11 +12,31 @@ local M = {}
 local TAP_INTERVAL = 0.25         -- seconds between taps to count as a sequence
 local LEFT_CTRL_KEYCODE = 59      -- macOS keycode for left Control
 
--- HEAVY_SCRIPT: absolute path to bin/handy-heavy. Override per machine via the
--- HANDY_COMPANION_HEAVY env var (set in your shell profile, then read by
--- Hammerspoon at launch). Default assumes a standard ~/handy-companion clone.
+-- HEAVY_SCRIPT: absolute path to bin/handy-heavy. Resolution order:
+--   1. HANDY_COMPANION_HEAVY env var (explicit override). Note: env vars set
+--      in ~/.zshrc / ~/.bash_profile are NOT visible to Hammerspoon — it's
+--      launched by launchd, not from an interactive shell. Use `launchctl
+--      setenv HANDY_COMPANION_HEAVY <path>` (re-run on each login) or a
+--      LaunchAgent for that path to work.
+--   2. ../bin/handy-heavy relative to THIS .lua file. This is the default
+--      and works for any install location: the user's `dofile` in
+--      ~/.hammerspoon/init.lua already had to point at our hammerspoon/
+--      directory, so we know where bin/ sits relative to that.
+--   3. ~/handy-companion/bin/handy-heavy as a last-resort fallback for
+--      the canonical OSS-install path documented in the README.
+local function script_dir()
+    -- debug.getinfo(1, "S").source is "@/abs/path/to/handy-heavy.lua".
+    -- Strip the leading "@" and the trailing filename to get the dir.
+    local src = debug.getinfo(1, "S").source
+    if src:sub(1, 1) == "@" then src = src:sub(2) end
+    return src:match("(.*/)") or "./"
+end
+
 local HEAVY_SCRIPT = os.getenv("HANDY_COMPANION_HEAVY")
-    or (os.getenv("HOME") .. "/handy-companion/bin/handy-heavy")
+    or (script_dir() .. "../bin/handy-heavy")
+if not hs.fs.attributes(HEAVY_SCRIPT, "mode") then
+    HEAVY_SCRIPT = os.getenv("HOME") .. "/handy-companion/bin/handy-heavy"
+end
 
 if not hs.fs.attributes(HEAVY_SCRIPT, "mode") then
     hs.alert.show(
