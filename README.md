@@ -264,7 +264,9 @@ All optional. Set in your shell profile or `~/.handy-companion/config.sh`
 |---------|---------|--------------|
 | `HANDY_COMPANION_HEAVY` | `~/handy-companion/bin/handy-heavy` | Where Hammerspoon looks for the Heavy script |
 | `HANDY_OLLAMA_HOST` | _empty_ | Set to e.g. `http://localhost:11434` to enable Ollama tier |
-| `HANDY_OLLAMA_MODEL` | _empty_ | e.g. `qwen2.5:3b` |
+| `HANDY_OLLAMA_MODEL` | _empty_ | e.g. `handy-medium` (after running `handy-settings/setup-ollama-fallback.sh`), or any Ollama model tag |
+| `OLLAMA_BASE_MODEL` | `gemma4:e2b` | Override the base model that `setup-ollama-fallback.sh` builds on |
+| `OLLAMA_USE_MLX` | _empty_ | Set to `1` to enable Ollama's MLX backend on Apple Silicon (requires ≥32 GB unified memory); ~2× decode speed on supported models |
 | `OLLAMA_TIMEOUT_SEC` | `15` | Ollama call timeout |
 | `GEMINI_TIMEOUT_SEC` | `15` | Gemini per-call timeout. A minimal prompt finishes in 1-2s; bigger personalized dictionaries (`prompts/*.local.txt` with dozens of terms) can take 8-12s on multilingual input, so 15s gives that headroom. |
 | `CLAUDE_TIMEOUT_SEC` | `30` | Claude CLI call timeout (Heavy/Heavy-Pro) |
@@ -363,33 +365,53 @@ Adjacent tools that build on Handy with different post-processing goals:
   Silicon, zero API cost. If you mostly dictate prompts *to* LLMs
   rather than text *for* humans, that's the one to look at.
 
-### Local-only with Ollama: the Modelfile pattern
+### Local-only with Ollama
 
 If you want a fully offline cleanup pipeline (no Gemini, no Claude),
-the cleanest pattern is what Prompt Architect uses: bake the prompt
-into an Ollama Modelfile, register it as a named model, and point
-Handy's "Custom" provider at it. That way the system prompt lives in
-one place, never has to travel over the network, and the per-call
-request is just `${output}`.
+the project ships a one-shot setup script:
 
 ```bash
-# 1. Write a Modelfile (e.g. ~/handy-cleanup.Modelfile):
-#    FROM qwen2.5:1.5b
-#    SYSTEM """<paste contents of prompts/medium.txt here>"""
-# 2. Register it as a model:
-ollama create handy-cleanup -f ~/handy-cleanup.Modelfile
-# 3. In Handy → Settings → Post-processing:
-#    Provider: Custom; Base URL: http://localhost:11434/v1
-#    Model: handy-cleanup; Prompt: ${output}
+bash handy-settings/setup-ollama-fallback.sh
 ```
 
-Picking a model: on Apple Silicon, `qwen2.5:0.5b` is the fastest
-(~1-2s for short dictations); `qwen2.5:1.5b` or `llama3.2:3b` give
-better multilingual / Russian handling at ~2-4s; `qwen2.5:7b` or
-larger approaches cloud-Gemini quality at the cost of 5-10s. For
-non-Latin scripts, prefer ≥3B — sub-billion-parameter models tend
-to drop punctuation and fail at phonetic-mistranscription fixes
-outside English.
+What it does:
+1. Pulls the base model (`gemma4:e2b` by default — 2.3B effective
+   parameters, ~7.2 GB on disk, multilingual)
+2. Generates an Ollama Modelfile that bakes `prompts/medium.local.txt`
+   (or `prompts/medium.txt`) as the SYSTEM block
+3. Registers the result as `handy-medium`
+4. Smoke-tests the model and prints how to wire it up — either as the
+   Ollama fallback tier in our chain (env vars) or as the primary
+   provider in Handy's built-in post-processing
+
+The Modelfile pattern (baked prompt vs passing the prompt on every
+call) matters for small local models: on our bench, baking the
+~3.5 KB cleanup prompt into the model cut short-input latency by
+~67% and medium-input by ~38% (long inputs gain less — there the
+prefill is dominated by the user transcript itself). It's also
+cleaner architecturally: one source of truth for the prompt, and
+the per-call request shrinks to `${output}`.
+
+#### Picking the base model
+
+`gemma4:e2b` is the default because it was the only sub-billion-
+effective-params model in our bench that consistently followed our
+multi-KB cleanup instructions instead of echoing the input verbatim.
+After warm-up it lands at roughly 1.7 s / 3.2 s / 5.9 s on short /
+medium / long dictations (Apple M3 Pro, 36 GB, Ollama 0.23 with
+MLX backend enabled). That's slower than cloud Gemini 3.1-flash-lite
+(~1-2 s across all sizes) but fast enough to be useful as a real
+fallback rather than a "better than nothing" tier.
+
+Override the base model with `OLLAMA_BASE_MODEL=...` before running
+the script — e.g. `gemma4:e4b` for higher quality at ~50% more
+latency, or a Qwen / Llama variant if you've benched something
+better for your language and stack. Sub-2B Qwen variants in our
+bench did *not* follow the prompt reliably on non-Latin input;
+prefer ≥3B if you go that route. Apple Silicon: enable Ollama's
+MLX backend with `OLLAMA_USE_MLX=1` in your shell profile (and
+`launchctl setenv OLLAMA_USE_MLX 1` so the daemon sees it on
+restart).
 
 ## Contributing
 

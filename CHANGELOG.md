@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.1.4 — 2026-05-13
+
+### Tooling
+
+- **`handy-settings/setup-ollama-fallback.sh`** — one-shot script that
+  builds a properly-configured local cleanup model in Ollama. Pulls
+  the base model (`gemma4:e2b` by default), generates an Ollama
+  Modelfile that bakes `prompts/medium.local.txt` (or `medium.txt`)
+  as the SYSTEM block, registers it as `handy-medium`, smoke-tests
+  it, and prints the env-var snippet for wiring it into the chain.
+  Override the base via `OLLAMA_BASE_MODEL=...` before running.
+
+### Background
+
+Benched current small local models on Apple Silicon M3 Pro 36 GB with
+the MLX backend enabled, on the same 3 dictation samples we use for
+the cloud-Gemini A/B/C: `qwen3.5:0.8b/2b/4b`, `gemma4:e2b/e4b`. Two
+findings shaped the script's defaults:
+
+1. **Prompt-baking via Modelfile is a real win for small models.**
+   Sending our ~3.5 KB cleanup prompt with every chat request costs
+   meaningful prefill latency. Same model, same prompt content,
+   delivery via Modelfile SYSTEM block instead of per-call message:
+   short input -67%, medium -38%, long ~unchanged (long-input
+   prefill is dominated by the user transcript itself, not the
+   system prompt).
+2. **Not all small models follow multi-KB instructions.** Sub-2B
+   Qwen 3.5 variants echoed the input verbatim regardless of
+   delivery method — model capacity, not prompt engineering, was
+   the limit. `gemma4:e2b` (2.3B effective) was the smallest model
+   that consistently applied the cleanup rules. Hence the default.
+
+After warm-up, `gemma4:e2b` with Modelfile averaged 1.7 s / 3.2 s /
+5.9 s on short / medium / long dictations — still 2-4× slower than
+paid cloud Gemini 3.1-flash-lite (~1-2 s across all sizes), but
+inside the "real fallback, not a worse-than-nothing fallback" zone
+for the first time. Quality side: brand names restored, filler
+removed; the rare gap vs cloud Gemini is in editorial polish on
+long inputs (paragraph structure, digit-form of percentages).
+
+### Configuration
+
+- New env vars documented in README: `OLLAMA_BASE_MODEL`,
+  `OLLAMA_USE_MLX`.
+
 ## v0.1.3 — 2026-05-12
 
 ### Performance
