@@ -350,6 +350,47 @@ Handy (~/Library/Application Support/com.pais.handy/settings_store.json)
         └── restore prev clipboard
 ```
 
+## Related projects
+
+Adjacent tools that build on Handy with different post-processing goals:
+
+- **[Prompt Architect](https://github.com/MaxSikorski/prompt-architect-handy)** —
+  takes the opposite angle: instead of turning dictation into
+  human-readable prose, it converts rambling voice input into compact,
+  intent-tagged prompts (`[BUILD]`, `[FIX]`, `[PLAN]`, `[EXPLAIN]`)
+  optimized for downstream LLM agents. Uses a local Qwen 3.5 0.5B
+  model via Ollama with a custom Modelfile, ~2s per call on Apple
+  Silicon, zero API cost. If you mostly dictate prompts *to* LLMs
+  rather than text *for* humans, that's the one to look at.
+
+### Local-only with Ollama: the Modelfile pattern
+
+If you want a fully offline cleanup pipeline (no Gemini, no Claude),
+the cleanest pattern is what Prompt Architect uses: bake the prompt
+into an Ollama Modelfile, register it as a named model, and point
+Handy's "Custom" provider at it. That way the system prompt lives in
+one place, never has to travel over the network, and the per-call
+request is just `${output}`.
+
+```bash
+# 1. Write a Modelfile (e.g. ~/handy-cleanup.Modelfile):
+#    FROM qwen2.5:1.5b
+#    SYSTEM """<paste contents of prompts/medium.txt here>"""
+# 2. Register it as a model:
+ollama create handy-cleanup -f ~/handy-cleanup.Modelfile
+# 3. In Handy → Settings → Post-processing:
+#    Provider: Custom; Base URL: http://localhost:11434/v1
+#    Model: handy-cleanup; Prompt: ${output}
+```
+
+Picking a model: on Apple Silicon, `qwen2.5:0.5b` is the fastest
+(~1-2s for short dictations); `qwen2.5:1.5b` or `llama3.2:3b` give
+better multilingual / Russian handling at ~2-4s; `qwen2.5:7b` or
+larger approaches cloud-Gemini quality at the cost of 5-10s. For
+non-Latin scripts, prefer ≥3B — sub-billion-parameter models tend
+to drop punctuation and fail at phonetic-mistranscription fixes
+outside English.
+
 ## Contributing
 
 Issues and PRs welcome. The project is small and focused; non-trivial
