@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.5 — 2026-05-24
+
+### Fixed
+
+- **`handy-settings/use-builtin-llm.sh`** — switched `paste_method` from
+  `direct` to `ctrl_v`. On macOS, `direct` routes to `enigo.text()`, which
+  synthesizes Unicode characters one keystroke at a time. Under load macOS
+  reorders/drops those synthetic key events, so mid-word characters get
+  relocated to the end of the pasted text (e.g. `второй` → `втой` plus a
+  stray `ро` at the very end). The longer the dictation, the more trailing
+  fragments accumulate — Cyrillic is hit hardest. `ctrl_v` writes the whole
+  string to the clipboard and sends a single atomic Cmd+V, eliminating the
+  per-character race. README updated with a warning against `direct` on macOS.
+
 ## v0.1.4 — 2026-05-13
 
 ### Tooling

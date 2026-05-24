@@ -6,9 +6,12 @@
 #
 # What this does:
 #   1. Backs up your current Handy settings (handy-settings/backups/...)
-#   2. Sets paste_method=direct (Handy's native paste — more reliable than
-#      our osascript Cmd+V from bin/handy-clean, which can drift focus on
-#      long LLM calls)
+#   2. Sets paste_method=ctrl_v (Handy's native clipboard paste — one atomic
+#      Cmd+V, no per-character key synthesis). Do NOT use "direct" here: on
+#      macOS it routes to enigo.text(), which injects Unicode characters one
+#      keystroke at a time and reorders/drops them under load. The visible
+#      symptom is mid-word characters getting relocated to the end of the
+#      pasted text — worse on long, Cyrillic dictation.
 #   3. Configures Handy's "Custom" post-process provider to point at
 #      https://generativelanguage.googleapis.com/v1beta/openai/ with the
 #      Gemini API key from your macOS Keychain
@@ -100,7 +103,7 @@ if missing:
     sys.exit(f"ERROR: Handy settings missing expected keys: {missing}. "
              f"Your Handy version may be incompatible with this script.")
 
-S["paste_method"] = "direct"
+S["paste_method"] = "ctrl_v"
 S["post_process_enabled"] = True
 S["post_process_provider_id"] = "custom"
 S["post_process_api_keys"]["custom"] = key

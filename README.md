@@ -91,14 +91,20 @@ Handy v0.8 ships its own OpenAI-compatible post-processing pipeline.
 You can skip the external_script path entirely and let Handy call
 Gemini directly via its OpenAI-compatible endpoint. This is a single
 config-file flip — see `handy-settings/use-builtin-llm.sh`. Run that
-script and Handy will start calling Gemini itself, using its native
-paste mechanism (more reliable than osascript Cmd+V from a shell
-script). To swap back to the external_script path, re-run
+script and Handy will start calling Gemini itself, pasting via its
+native clipboard method (`paste_method=ctrl_v`: one atomic Cmd+V).
+To swap back to the external_script path, re-run
 `bash handy-settings/apply.sh`.
+
+> **Do not set `paste_method=direct` on macOS.** "Direct" routes to
+> `enigo.text()`, which synthesizes Unicode characters one keystroke at
+> a time; under load macOS reorders/drops them and mid-word characters
+> get relocated to the end of the pasted text. It's especially visible
+> on long, Cyrillic dictation. Use `ctrl_v` (clipboard) instead.
 
 |                       | External script (default)                                    | Handy built-in (alternative)                          |
 |-----------------------|--------------------------------------------------------------|-------------------------------------------------------|
-| Paste reliability     | osascript Cmd+V; can drift focus during long LLM calls       | Handy's native paste; rock solid                      |
+| Paste reliability     | osascript Cmd+V; can drift focus during long LLM calls       | Handy's native clipboard Cmd+V (`ctrl_v`); rock solid |
 | Provider fallback     | Gemini → Ollama → Claude → raw Whisper                       | Single provider → raw Whisper on failure              |
 | Multi-key support     | Yes, primary → secondary → legacy Keychain slots             | No (one key per provider in Handy's settings)         |
 | API key storage       | macOS Keychain (encrypted at rest)                           | JSON file in `~/Library/Application Support/com.pais.handy/` |
